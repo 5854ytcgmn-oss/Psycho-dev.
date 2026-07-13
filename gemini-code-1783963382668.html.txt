@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PSYCHO RUNNER: ASCENSION</title>
+    <style>
+        :root {
+            --neon-blue: #00f2ff;
+            --neon-pink: #ff00ff;
+            --neon-purple: #bc13fe;
+            --neon-red: #ff0033;
+            --neon-gold: #ffcc00;
+            --dark-bg: #050505;
+        }
+
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            overflow: hidden; background: var(--dark-bg); 
+            font-family: 'Courier New', Courier, monospace; color: white; 
+            touch-action: none;
+        }
+
+        #game-wrapper { 
+            position: relative; width: 100vw; height: 100vh; 
+            display: flex; justify-content: center; align-items: center; 
+            overflow: hidden; background: #000;
+        }
+
+        canvas { display: block; background: #000; will-change: transform; }
+
+        .overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            display: flex; flex-direction: column; justify-content: center; 
+            align-items: center; background: rgba(0, 0, 0, 0.9); z-index: 100; 
+        }
+
+        .menu-card { 
+            background: rgba(10, 10, 20, 0.95); border: 2px solid var(--neon-blue); 
+            padding: 25px; border-radius: 15px; text-align: center; 
+            width: 90%; max-width: 320px; box-shadow: 0 0 20px rgba(0, 242, 255, 0.2); 
+        }
+        
+        h1 { font-size: 2.2rem; margin: 0 0 10px; color: var(--neon-blue); text-shadow: 0 0 15px var(--neon-blue); font-style: italic; }
+        
+        .btn { 
+            display: block; width: 100%; margin: 10px 0; padding: 18px; 
+            border: 2px solid var(--neon-pink); background: rgba(255, 0, 255, 0.1); 
+            color: var(--neon-pink); cursor: pointer; font-weight: bold; 
+            text-transform: uppercase; font-size: 1.2rem; border-radius: 8px;
+            pointer-events: auto;
+        }
+        
+        .btn:active { background: var(--neon-pink); color: white; transform: scale(0.95); }
+
+        .hud { 
+            position: absolute; top: 0; left: 0; width: 100%; padding: 15px; 
+            z-index: 50; pointer-events: none; display: flex; justify-content: space-between; 
+        }
+
+        .stat-box { background: rgba(0,0,0,0.7); padding: 5px 12px; border-left: 3px solid var(--neon-blue); margin-bottom: 5px; }
+        .label { font-size: 0.7rem; color: var(--neon-blue); display: block; text-transform: uppercase; }
+        .value { font-size: 1.1rem; font-weight: bold; }
+
+        .energy-container { 
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); 
+            width: 220px; height: 14px; background: rgba(255,255,255,0.1); 
+            border: 1px solid #444; border-radius: 7px; overflow: hidden; pointer-events: none; 
+        }
+        
+        #energy-fill { width: 0%; height: 100%; background: linear-gradient(90deg, var(--neon-blue), var(--neon-purple)); box-shadow: 0 0 10px var(--neon-blue); }
+        
+        #trans-label { 
+            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); 
+            font-size: 0.9rem; color: var(--neon-purple); font-weight: bold; text-shadow: 0 0 5px black;
+            text-align: center; width: 100%;
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <div id="hud-layer" class="hud hidden">
+        <div>
+            <div class="stat-box"><span class="label">Distance</span><span class="value" id="dist-val">0m</span></div>
+            <div class="stat-box" style="border-color: var(--neon-gold);"><span class="label">Coins</span><span class="value" id="coin-val">0</span></div>
+        </div>
+        <div style="text-align: right; pointer-events: auto;">
+            <div class="stat-box" style="border-color: var(--neon-pink);"><span class="label">Record</span><span class="value" id="best-val">0m</span></div>
+            <button class="btn" style="padding: 5px 10px; font-size: 0.7rem; width: auto; margin:0;" id="pause-btn">PAUSE</button>
+        </div>
+    </div>
+
+    <div id="trans-label" class="hidden">NORMAL PSYCHO</div>
+    <div class="energy-container hidden" id="energy-bar"><div id="energy-fill"></div></div>
+
+    <!-- Screens -->
+    <div id="screen-main" class="overlay">
+        <div class="menu-card">
+            <h1>PSYCHO RUNNER</h1>
+            <p style="color: var(--neon-pink); font-size: 0.8rem; margin-bottom: 20px;">ASCENSION</p>
+            <button class="btn" id="start-btn">START GAME</button>
+        </div>
+    </div>
+
+    <div id="screen-over" class="overlay hidden">
+        <div class="menu-card">
+            <h1 style="color: var(--neon-red);">WASTED</h1>
+            <p>DISTANCE: <span id="final-dist">0</span>m</p>
+            <p>COINS: <span id="final-coins">0</span></p>
+            <button class="btn" id="retry-btn">REBOOT</button>
+        </div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+</div>
+
+<script>
+/**
+ * PSYCHO RUNNER: ASCENSION 
+ * Optimized for iPad Safari & High-Refresh Rate Mobile Displays
+ */
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: false }); // Performance optimization for Safari
+
+const COLORS = {
+    blue: '#00f2ff', pink: '#ff00ff', purple: '#bc13fe', 
+    red: '#ff0033', gold: '#ffcc00', white: '#ffffff'
+};
+
+const TRANSFORMS = [
+    { name: "NORMAL PSYCHO", color: '#111', glow: COLORS.blue, mult: 1 },
+    { name: "SHADOW PSYCHO", color: '#000', glow: COLORS.purple, mult: 2 },
+    { name: "CRIMSON PSYCHO", color: '#200', glow: COLORS.red, mult: 3 },
+    { name: "PHANTOM PSYCHO", color: '#333', glow: COLORS.white, mult: 5 }
+];
+
+const audio = {
+    ctx: null,
+    init() {
+        try {
+            if (!this.ctx) {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (this.ctx.state === 'suspended') {
+                this.ctx.resume();
+            }
+        } catch(e) { console.log("Audio init failed"); }
+    },
+    beep(freq, type, dur) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.05, this.ctx.currentTime); // Softened for comfortable mobile audio
+        gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + dur);
+    }
+};
+
+const game = {
+    active: false,
+    paused: false,
+    width: 400,
+    height: 700,
+    dist: 0,
+    coins: 0,
+    best: localStorage.getItem('psy_best_v3') || 0,
+    speed: 10.08, // Increased initial speed by 20% (Base 8.4 * 1.2)
+    energy: 0,
+    transIdx: 0,
+    entities: [],
+    buildings: [],
+    lastTime: 0,
+    spawnCooldown: 0,
+    lastSpawnLane: -1,
+    
+    player: {
+        lane: 1, x: 200, y: 580, targetX: 200,
+        jumpY: 0, jumpV: 0, slideT: 0, shield: false
+    },
+
+    init() {
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+        this.setupBuildings();
+        this.setupInputs();
+
+        const startBtn = document.getElementById('start-btn');
+        const retryBtn = document.getElementById('retry-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+
+        const startAction = (e) => {
+            if(e) e.preventDefault();
+            audio.init();
+            this.start();
+        };
+
+        startBtn.addEventListener('click', startAction);
+        startBtn.addEventListener('touchstart', startAction, {passive: false});
+        
+        retryBtn.addEventListener('click', startAction);
+        retryBtn.addEventListener('touchstart', startAction, {passive: false});
+
+        pauseBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.paused = !this.paused;
+        });
+
+        // RequestAnimationFrame timestamp passing
+        requestAnimationFrame((t) => this.loop(t));
+    },
+
+    resize() {
+        const ratio = 400 / 700;
+        let w = window.innerWidth, h = window.innerHeight;
+        if (w/h > ratio) w = h * ratio; else h = w / ratio;
+        canvas.width = 400; canvas.height = 700;
+        canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    },
+
+    setupBuildings() {
+        for(let i=0; i<12; i++) {
+            this.buildings.push({
+                x: Math.random() * 400, y: Math.random() * 700,
+                w: 20 + Math.random() * 60, h: 80 + Math.random() * 200,
+                s: 0.5 + Math.random() * 2
+            });
+        }
+    },
+
+    setupInputs() {
+        let sx, sy;
+        const handleMove = (dir) => {
+            if (!this.active || this.paused) return;
+            if (dir === 'L' && this.player.lane > 0) this.player.lane--;
+            if (dir === 'R' && this.player.lane < 2) this.player.lane++;
+            if (dir === 'U' && this.player.jumpY === 0) { 
+                this.player.jumpV = 19; // Tweaked for satisfying jump dynamics
+                audio.beep(400, 'triangle', 0.2); 
+            }
+            if (dir === 'D') { 
+                this.player.slideT = 35; 
+                if (this.player.jumpY > 0) { // Fast-fall mechanic if pressing down while jumping
+                    this.player.jumpV = -12;
+                }
+                audio.beep(200, 'sine', 0.2); 
+            }
+        };
+
+        window.addEventListener('keydown', e => {
+            if (e.key === 'ArrowLeft') handleMove('L');
+            if (e.key === 'ArrowRight') handleMove('R');
+            if (e.key === 'ArrowUp') handleMove('U');
+            if (e.key === 'ArrowDown') handleMove('D');
+        });
+
+        canvas.addEventListener('touchstart', e => { 
+            sx = e.touches[0].clientX; 
+            sy = e.touches[0].clientY; 
+        }, {passive: false});
+
+        canvas.addEventListener('touchend', e => {
+            const dx = e.changedTouches[0].clientX - sx;
+            const dy = e.changedTouches[0].clientY - sy;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 30) handleMove('R'); else if (dx < -30) handleMove('L');
+            } else {
+                if (dy > 30) handleMove('D'); else if (dy < -30) handleMove('U');
+            }
+        }, {passive: false});
+    },
+
+    start() {
+        this.active = true;
+        this.paused = false;
+        this.dist = 0;
+        this.coins = 0;
+        this.energy = 0;
+        this.transIdx = 0;
+        this.speed = 10.08; // 20% speed increase preserved here
+        this.entities = [];
+        this.spawnCooldown = 0;
+        this.lastSpawnLane = -1;
+        this.player.lane = 1;
+        this.player.x = 200;
+        this.player.targetX = 200;
+        this.player.jumpY = 0;
+        this.player.jumpV = 0;
+        this.player.slideT = 0;
+        this.lastTime = performance.now();
+        
+        document.getElementById('screen-main').classList.add('hidden');
+        document.getElementById('screen-over').classList.add('hidden');
+        document.getElementById('hud-layer').classList.remove('hidden');
+        document.getElementById('energy-bar').classList.remove('hidden');
+        document.getElementById('trans-label').classList.remove('hidden');
+        
+        audio.beep(300, 'square', 0.3);
+    },
+
+    gameOver() {
+        this.active = false;
+        if (this.dist > this.best) {
+            this.best = Math.floor(this.dist);
+            localStorage.setItem('psy_best_v3', this.best);
+        }
+        document.getElementById('final-dist').innerText = Math.floor(this.dist);
+        document.getElementById('final-coins').innerText = this.coins;
+        document.getElementById('screen-over').classList.remove('hidden');
+        audio.beep(100, 'sawtooth', 0.5);
+    },
+
+    update(dt) {
+        if (!this.active || this.paused) return;
+
+        const tf = TRANSFORMS[this.transIdx];
+        this.dist += (this.speed / 18) * tf.mult * dt;
+        this.speed += 0.0012 * dt; // Scaled acceleration safely with speed shift
+
+        // Player horizontal movement: Framerate independent lerp for extreme fluidity
+        this.player.targetX = this.player.lane * 100 + 100;
+        this.player.x += (this.player.targetX - this.player.x) * (1 - Math.pow(0.005, dt));
+        
+        // Jump Arc & Gravity Mechanics
+        if (this.player.jumpV !== 0 || this.player.jumpY > 0) {
+            this.player.jumpY += this.player.jumpV * dt;
+            this.player.jumpV -= 0.95 * dt; // Clean gravity curve adjustment
+            if (this.player.jumpY <= 0) { this.player.jumpY = 0; this.player.jumpV = 0; }
+        }
+        if (this.player.slideT > 0) this.player.slideT -= dt;
+
+        // HUD Update
+        document.getElementById('dist-val').innerText = Math.floor(this.dist) + 'm';
+        document.getElementById('coin-val').innerText = this.coins;
+        document.getElementById('best-val').innerText = this.best + 'm';
+        document.getElementById('energy-fill').style.width = Math.min(this.energy, 100) + '%';
+        document.getElementById('trans-label').innerText = tf.name;
+        document.getElementById('trans-label').style.color = tf.glow;
+
+        // Buildings background parallax loop
+        this.buildings.forEach(b => {
+            b.y += b.s * (this.speed / 6) * dt;
+            if (b.y > 700) { b.y = -b.h; b.x = Math.random() * 400; }
+        });
+
+        // Smart & Fair Row-Based Spawning Logic
+        this.spawnCooldown -= dt;
+        if (this.spawnCooldown <= 0) {
+            let spawnChance = 0.15;
+            if (this.dist > 200) spawnChance = 0.22;
+            if (this.dist > 500) spawnChance = 0.28;
+            if (this.dist > 1000) spawnChance = 0.35;
+
+            if (Math.random() < spawnChance) {
+                // Determine layout types dynamically to ensure an escape lane always exists
+                const spawnRoll = Math.random();
+                this.spawnCooldown = Math.max(22, 45 - (this.speed * 1.5)); // Dynamic distance matching speed changes
+                
+                let lane = Math.floor(Math.random() * 3);
+                
+                if (spawnRoll > 0.82) { // 18% Chance for structured item streams (crystals/coins)
+                    let type = Math.random() > 0.45 ? 'crystal' : 'coin'; // Balanced rewarding progression loop
+                    this.entities.push({ lane, type, x: lane*100+100, y: -40 });
+                    // Spawn sequential collection items downstream safely
+                    this.entities.push({ lane, type, x: lane*100+100, y: -100 });
+                } else {
+                    // Obstacle Generation: Prevent unbreakable multi-lane configurations
+                    if (this.lastSpawnLane !== -1 && Math.random() > 0.5) {
+                        lane = (this.lastSpawnLane + 1) % 3; // Shift patterns safely across tracks
+                    }
+                    this.lastSpawnLane = lane;
+                    this.entities.push({ lane, type: 'obs', x: lane*100+100, y: -40 });
+                    
+                    // Small side-bonus generation in alternative lane
+                    if (Math.random() > 0.6) {
+                        let bonusLane = (lane + 1) % 3;
+                        let bonusType = Math.random() > 0.7 ? 'crystal' : 'coin';
+                        this.entities.push({ lane: bonusLane, type: bonusType, x: bonusLane*100+100, y: -40 });
+                    }
+                }
+            }
+        }
+
+        // Processing Game Entities & Dynamic Hitbox Calculations
+        for (let i = this.entities.length-1; i>=0; i--) {
+            const e = this.entities[i];
+            e.y += this.speed * dt;
+            
+            const dx = Math.abs(this.player.x - e.x);
+            const dy = Math.abs((this.player.y) - e.y);
+
+            // Robust dynamic bounding box collision handling
+            if (dx < 35 && dy < 35) {
+                if (e.type === 'coin') {
+                    this.coins++; this.entities.splice(i, 1); audio.beep(800, 'sine', 0.08);
+                } else if (e.type === 'crystal') {
+                    this.energy += 20; this.entities.splice(i, 1); audio.beep(1200, 'sine', 0.08);
+                    if (this.energy >= 100) {
+                        this.energy = 0;
+                        if (this.transIdx < TRANSFORMS.length-1) {
+                            this.transIdx++;
+                            audio.beep(400, 'square', 0.5);
+                        }
+                    }
+                } else if (e.type === 'obs') {
+                    // Leap clean over standard obstacles contextually or fail state triggers
+                    if (this.player.jumpY > 28) {
+                        // Safe clearance height achieved
+                    } else {
+                        this.gameOver();
+                        return;
+                    }
+                }
+            }
+            if (e.y > 750) this.entities.splice(i, 1);
+        }
+    },
+
+    draw() {
+        // Optimized Canvas clear layer configuration
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(0, 0, 400, 700);
+
+        // Distant Background Parallax Architecture
+        ctx.fillStyle = 'rgba(0, 242, 255, 0.04)';
+        this.buildings.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+
+        // High-speed Laser Track Boundaries
+        ctx.strokeStyle = 'rgba(0, 242, 255, 0.12)';
+        ctx.setLineDash([20, 20]);
+        ctx.lineDashOffset = -this.dist * 2.5;
+        for(let i=1; i<3; i++) {
+            ctx.beginPath(); ctx.moveTo(i*100+50, 0); ctx.lineTo(i*100+50, 700); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        // Rendering Interactive Game Entities
+        this.entities.forEach(e => {
+            const col = e.type === 'coin' ? COLORS.gold : (e.type === 'crystal' ? COLORS.purple : COLORS.red);
+            
+            // iPad-optimized context glow setting (Subtle radius preserves processing power)
+            ctx.shadowBlur = 6; 
+            ctx.shadowColor = col; 
+            ctx.fillStyle = col;
+            
+            if (e.type === 'coin') {
+                ctx.beginPath(); ctx.arc(e.x, e.y, 12, 0, Math.PI*2); ctx.fill();
+            } else if (e.type === 'crystal') {
+                ctx.beginPath();
+                ctx.moveTo(e.x, e.y - 16);
+                ctx.lineTo(e.x + 11, e.y);
+                ctx.lineTo(e.x, e.y + 16);
+                ctx.lineTo(e.x - 11, e.y);
+                ctx.closePath();
+                ctx.fill();
+            } else {
+                ctx.fillRect(e.x-18, e.y-18, 36, 36);
+            }
+        });
+
+        // Drawing Cyber-Runner Model
+        const tf = TRANSFORMS[this.transIdx];
+        ctx.save();
+        ctx.translate(this.player.x, this.player.y - this.player.jumpY);
+        if (this.player.slideT > 0) ctx.scale(1.2, 0.55);
+        
+        ctx.shadowBlur = 8; ctx.shadowColor = tf.glow;
+        ctx.fillStyle = tf.color;
+        ctx.beginPath(); ctx.arc(0, -45, 17, 0, Math.PI*2); ctx.fill(); // Cyber Hood
+        ctx.fillRect(-15, -32, 30, 42); // Interactive Torso Chassis
+        
+        // Dynamic Vector Motion Cape Display
+        ctx.fillStyle = tf.glow; ctx.globalAlpha = 0.35;
+        ctx.beginPath();
+        const drift = Math.sin(performance.now()/100)*6;
+        ctx.moveTo(-13, -10); ctx.lineTo(-30 + drift, 42); 
+        ctx.lineTo(30 + drift, 42); ctx.lineTo(13, -10);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+
+        // Glowing HUD Visor Elements
+        ctx.shadowBlur = 5; ctx.shadowColor = 'red'; ctx.fillStyle = 'red';
+        ctx.fillRect(-8, -49, 5, 3);
+        ctx.fillRect(3, -49, 5, 3);
+        ctx.restore();
+
+        // Flush shadow state immediately to optimize GPU mapping steps
+        ctx.shadowBlur = 0;
+    },
+
+    loop(timestamp) {
+        if (!this.lastTime) this.lastTime = timestamp;
+        let elapsed = timestamp - this.lastTime;
+        
+        // Safeguard running context parameters inside standard delta boundaries (e.g. 60Hz normalization)
+        let dt = elapsed / 16.666;
+        if (dt > 4) dt = 4; // Caps massive rendering jumps during minor background suspends
+        
+        this.lastTime = timestamp;
+
+        this.update(dt);
+        this.draw();
+        requestAnimationFrame((t) => this.loop(t));
+    }
+};
+
+// Error-immune execution context initializing sequence
+if (typeof game !== 'undefined') {
+    try{game.init();}catch(err){console.error('Core runtime setup exception: '+err.message);}
+}
+</script>
+</body>
+</html>
